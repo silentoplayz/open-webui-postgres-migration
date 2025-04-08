@@ -227,7 +227,7 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details (You would need to create a LICENSE file, typically containing the standard MIT license text).
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Disclaimer
 
