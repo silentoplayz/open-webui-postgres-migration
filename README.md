@@ -7,6 +7,7 @@ This repository contains a robust and interactive set of Python scripts designed
 1.  **`migrate.py`**: Migrates data from an existing Open WebUI SQLite database (`webui.db`) to a PostgreSQL database.
 2.  **`clean_stale_models.py`**: Cleans up the `model` table in your PostgreSQL database by removing entries that are no longer listed in the Open WebUI API and are not explicitly marked as disabled (`is_active=False`) in the database. This helps remove orphaned entries after models are deleted or become unavailable.
 3.  **`models_check.py`**: A simple utility script to quickly fetch and display the models currently listed by your Open WebUI API endpoint. Useful for debugging or verification.
+4.  **`revoke_share_links.py`**: Finds chats with active share links in the PostgreSQL database and allows selective revocation of those links by setting their `share_id` to `NULL`.
 
 ## Features
 
@@ -15,6 +16,7 @@ This repository contains a robust and interactive set of Python scripts designed
 *   **Automatic Data Type Mapping**: Maps common SQLite data types to appropriate PostgreSQL types during migration (`migrate.py`).
 *   **Real-time Progress Visualization**: See the progress of data migration table-by-table with row counts and time elapsed (`migrate.py`).
 *   **Stale Model Cleanup**: Identify and remove potentially orphaned model entries from the PostgreSQL `model` table (`clean_stale_models.py`).
+*   **Selective Chat Share Link Revocation**: Find and disable specific share links directly in the database (`revoke_share_links.py`).
 *   **Unicode & Special Character Handling**: Designed to handle UTF-8 data commonly found in chat logs and configurations.
 *   **Error Handling**: Provides feedback on connection issues, data processing errors, and potential problems.
 *   **Batch Processing**: Efficient data transfer during migration using configurable batch sizes (`migrate.py`).
@@ -28,7 +30,7 @@ This repository contains a robust and interactive set of Python scripts designed
 *   **Open WebUI Instance**: A running instance of Open WebUI.
     *   You'll need its Base URL (e.g., `http://localhost:1337`).
     *   You'll need an API Key (Bearer Token) for the `clean_stale_models.py` script. Generate one in the Open WebUI settings if needed.
-*   **Source SQLite Database**: Access to the `webui.db` file (or your named SQLite file) from your *existing* Open WebUI setup.
+*   **Source SQLite Database** (for `migrate.py`): Access to the `webui.db` file (or your named SQLite file) from your *existing* Open WebUI setup.
 *   **Target PostgreSQL Database**:
     *   A running PostgreSQL server.
     *   Connection details: Host, Port, Database Name, Username, Password.
@@ -73,9 +75,9 @@ This repository contains a robust and interactive set of Python scripts designed
 
 ## 📝 Best Practices
 
-Following these steps is highly recommended for a smooth migration:
+Following these steps is highly recommended, especially for migration:
 
-1.  **Before Migration:**
+1.  **Before Migration (`migrate.py`):**
     *   🛑 **BACKUP BOTH YOUR SQLITE AND POSTGRESQL DATABASES!**
     *   **Crucial:** Start Open WebUI at least once with the `DATABASE_URL` environment variable configured to point to your **new, empty PostgreSQL instance**.
         *   This allows Open WebUI to automatically create the necessary tables (bootstrap the schema) in the PostgreSQL database. **The migration script `migrate.py` requires these tables to exist.**
@@ -100,9 +102,12 @@ Following these steps is highly recommended for a smooth migration:
     *   Verify data integrity by checking users, chat history, models, etc., within the Open WebUI interface.
     *   Thoroughly test application functionality.
 
+4.  **Before Running Destructive Tools (`clean_stale_models.py`, `revoke_share_links.py`):**
+    *   🛑 **ALWAYS BACKUP YOUR POSTGRESQL DATABASE** before running tools that modify data.
+
 ## Usage
 
-⚠️ **IMPORTANT:** Always follow the Best Practices, especially regarding backups and letting Open WebUI create the initial PG schema.
+⚠️ **IMPORTANT:** Always follow the Best Practices, especially regarding backups and letting Open WebUI create the initial PG schema before migration.
 
 ### 1. Migrating Data (`migrate.py`)
 
@@ -160,9 +165,36 @@ This script identifies and removes entries from the `model` table in PostgreSQL 
     *   Display a list of potentially stale models found.
     *   Ask for confirmation before deleting the identified stale entries.
 
-### 3. Checking API Models (`models_check.py`)
+### 3. Revoking Chat Share Links (`revoke_share_links.py`)
 
-A very basic script to quickly query the `/api/models` endpoint and print the results.
+This script finds chats with active share links (`share_id` is not NULL) in your PostgreSQL database and allows you to selectively revoke them by setting the `share_id` to `NULL`.
+
+**Warnings:**
+
+*   🛑 **BACKUP YOUR POSTGRESQL DATABASE FIRST!**
+*   Revoking a share link is permanent (unless manually re-shared via the UI).
+*   **Verify Table/Column Names:** Before running, open `revoke_share_links.py` and check the variables near the top (`DB_CHAT_TABLE_NAME`, `DB_CHAT_ID_COLUMN`, `DB_CHAT_SHARE_ID_COLUMN`, `DB_CHAT_TITLE_COLUMN`) match the actual names in your database. Use `psql` or a tool like Adminer/pgAdmin to confirm.
+
+**Steps:**
+
+1.  Make sure your virtual environment (`venv` or `conda`) is activated.
+2.  Verify the table/column names within the script file itself.
+3.  Run the script:
+    ```bash
+    python revoke_share_links.py
+    ```
+4.  Follow the interactive prompts:
+    *   Enter the connection details for your PostgreSQL database.
+5.  The script will:
+    *   Fetch all chats that have a non-NULL `share_id`.
+    *   Display these chats in a numbered list showing Title, Chat ID, and Share ID.
+    *   Prompt you to enter the number(s) of the chats whose links you want to revoke (comma-separated, 'all', or 'q' to quit).
+    *   Display the selected chats for final confirmation.
+    *   Ask for confirmation before updating the database to set the `share_id` to `NULL` for the selected chats.
+
+### 4. Checking API Models (`models_check.py`)
+
+A very basic script to quickly query the `/api/models` endpoint and print the results. Useful for verifying API connectivity or seeing what models Open WebUI reports.
 
 **Steps:**
 
@@ -191,6 +223,9 @@ These scripts include features to help prevent accidental data loss:
 *   **`clean_stale_models.py`**:
     *   Displays the list of model IDs identified as "stale".
     *   Requires explicit confirmation from the user before proceeding with the deletion from the PostgreSQL database.
+*   **`revoke_share_links.py`**:
+    *   Displays the specific chats (Title, ID, Share ID) selected for revocation.
+    *   Requires explicit confirmation before updating the database to set `share_id` to `NULL`.
 
 ## 🚨 Troubleshooting
 
@@ -206,13 +241,20 @@ Common issues and potential solutions:
     *   Ensure the API Key (Bearer Token) is valid and hasn't expired or been revoked.
     *   Check network connectivity between the script's machine and the Open WebUI server.
 *   **Permission Errors (PostgreSQL):**
-    *   The PostgreSQL user needs `SELECT`, `INSERT`, `DELETE`, and `TRUNCATE` privileges on the Open WebUI tables for these scripts to function fully. Grant necessary permissions if needed.
-*   **Permission Errors (SQLite):**
+    *   The PostgreSQL user needs `SELECT`, `INSERT`, `DELETE`, and `TRUNCATE` privileges on the Open WebUI tables for `migrate.py` and `clean_stale_models.py`.
+    *   For `revoke_share_links.py`, the user needs `SELECT` and `UPDATE` privileges on the chat table. Grant necessary permissions if needed.
+*   **Permission Errors (SQLite - `migrate.py`):**
     *   Ensure the script has read permissions for the source `webui.db` file and its directory.
 *   **`clean_stale_models.py`: `is_active` column not found:** This might indicate you are using a version of Open WebUI that doesn't use this column name or mechanism for disabling models in the database. The script might need adjustment for your specific version.
+*   **`revoke_share_links.py`: Table or Column not found:** Double-check the table and column name variables (`DB_CHAT_TABLE_NAME`, etc.) at the top of the `revoke_share_links.py` script and ensure they match your actual database schema.
 *   **`migrate.py`: Table not found / Schema mismatch:** This almost always means the target PostgreSQL database **does not have the schema created**. Follow the "Before Migration" best practice: let Open WebUI connect to the PG database *first* to create the tables.
 *   **`migrate.py`: Data Type Errors / Row Failures:** Some complex or unusual data in SQLite might cause issues during insertion into PostgreSQL. The script attempts to clean common issues (like null bytes, basic JSON conversion), but specific errors might require manual investigation or adjustments to the `clean_value` function in `migrate.py`. Check the console output and any generated `migration_log_*.txt` files for details on failed rows.
 *   **Environment Issues:** Ensure you have activated the correct virtual environment (`venv` or `conda`) before running `pip install` or executing the Python scripts. Check with `which python` (Linux/macOS) or `where python` (Windows).
+*   **Memory Errors during Migration:**
+    *   If you encounter memory-related errors while running the migration script (`migrate.py`), try reducing the **Batch Size** when prompted during the configuration phase. Smaller batches use less memory but may take slightly longer.
+*   **Encoding Issues:**
+    *   Character encoding problems can sometimes occur if the database isn't set up correctly. Ensure your PostgreSQL database uses **UTF-8 encoding**, which is standard and handles a wide range of characters.
+    *   You can usually verify this by connecting to your database using `psql` or Adminer and running the SQL command: `SHOW SERVER_ENCODING;`. It should report `UTF8`. If not, you may need to recreate the database with the correct encoding.
 
 ## Contributing
 
